@@ -15,7 +15,7 @@ class QueryLogger
 	private bool $enableMapValue;
 	private bool $logExecTime;
 	private int $slowQueryThreshold;
-	private string $logConnections;
+	private ?string $logConnections;
 
 	public function __construct()
 	{
@@ -34,7 +34,7 @@ class QueryLogger
 	 */
 	public function isEnabledForConnection(string $connectionName): bool
 	{
-		if ($this->logConnections === "all") {
+		if (is_null($this->logConnections)) {
 			return true;
 		}
 
