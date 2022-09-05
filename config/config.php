@@ -9,7 +9,7 @@ return [
     'enabled' => env('QUERY_LOGGER_ENABLED', true),
 
     // Enable or disable query logger for specific connection
-    'enable_for_connection' => env('QUERY_LOGGER_ENABLE_FOR_CONNECTION', 'all'),
+    'enable_for_connection' => env('QUERY_LOGGER_ENABLE_FOR_CONNECTION', null),
 
     // Channel you want to save query into (must have in laravel logging channel config)
     'channel' => env('QUERY_LOGGER_LOG_CHANNEL', 'stack'),
@@ -24,5 +24,9 @@ return [
 
     // Look at the name, you know, the threshold to assign "SLOW QUERY" before your query in the log
     'slow_query_threshold' => env('QUERY_LOGGER_SLOW_QUERY_THRESHOLD', 0),
+
+	// Log query execute path
+	'log_exec_path' => env('QUERY_LOGGER_LOG_EXEC_PATH', true),
+
 
 ];

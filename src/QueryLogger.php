@@ -9,12 +9,14 @@ use Illuminate\Support\Facades\DB;
 
 class QueryLogger
 {
+	private ? object $query;
 	protected string $fullLog;
 	private bool $isEnabled;
 	private string $logChannel;
 	private bool $enableMapValue;
 	private bool $logExecTime;
 	private int $slowQueryThreshold;
+	private bool $logExecPath;
 	private ?string $logConnections;
 
 	public function __construct()
@@ -24,6 +26,7 @@ class QueryLogger
 		$this->enableMapValue = config("query-logger.map_value");
 		$this->logExecTime = config("query-logger.log_exec_time");
 		$this->slowQueryThreshold = config("query-logger.slow_query_threshold");
+		$this->logExecPath = config("query-logger.log_exec_path");
 		$this->logConnections = config("query-logger.log_connections");
 	}
 
@@ -49,51 +52,61 @@ class QueryLogger
 	 *
 	 * @return void
 	 */
-	public function mapValue($query)
+	public function mapValue()
 	{
-		$this->fullLog = Str::replaceArray("?", $query->bindings, $query->sql);
-	}
-
-	/**
-	 * @param $query
-	 *
-	 * @return void
-	 */
-	private function addSlowPrefix($query)
-	{
-		$this->fullLog =
-			$query->time >= $this->slowQueryThreshold
-				? "SLOW QUERY: " . $this->fullLog
-				: $this->fullLog;
-	}
-
-	/**
-	 * @param $query
-	 *
-	 * @return void
-	 */
-	private function generateLog($query): void
-	{
-
-		$this->fullLog = $query->sql;
-
-		Log::channel($this->logChannel)->info('START QUERY LOG');
-
 		if ($this->enableMapValue) {
-			$this->mapValue($query);
+			$this->fullLog = Str::replaceArray("?", $this->query->bindings, $this->query->sql);
 		}
-		if ($this->slowQueryThreshold > 0) {
-			$this->addSlowPrefix($query);
+	}
+
+	/**
+	 * @param $query
+	 *
+	 * @return void
+	 */
+	private function addSlowPrefix()
+	{
+		if ($this->slowQueryThreshold > 0 && $this->query->time >= $this->slowQueryThreshold) {
+			$this->fullLog = "#SLOW_QUERY: " . $this->fullLog;
 		}
+	}
 
-		Log::channel($this->logChannel)->info($this->fullLog);
-
+	private function addExecTime()
+	{
 		if ($this->logExecTime) {
 			Log::channel($this->logChannel)->info(
-				"Query Execute Time: " . $query->time . ' ms'
+				"Execute Time: " . $this->query->time . ' ms'
 			);
 		}
-		Log::channel($this->logChannel)->info('END QUERYLOG');
+	}
+
+	private function addExecPath()
+	{
+		if ($this->logExecPath) {
+			Log::channel($this->logChannel)->info(
+				"Execute Path: " . request()->route()->getActionName()
+			);
+		}
+	}
+
+	/**
+	 * @param $query
+	 *
+	 * @return void
+	 */
+	private function generateLog(): void
+	{
+		Log::channel($this->logChannel)->info('START QUERY LOG');
+
+		self::mapValue();
+		self::addSlowPrefix();
+
+		Log::channel($this->logChannel)->info(sprintf('[connection.%s] %s', $this->query->connectionName, $this->fullLog));
+
+		self::addExecTime();
+		self::addExecPath();
+
+		Log::channel($this->logChannel)->info('END QUERY LOG');
 	}
 
 	/**
@@ -104,7 +117,8 @@ class QueryLogger
 		if ($this->isEnabled) {
 			DB::listen(function ($query) {
 				if ($this->isEnabledForConnection($query->connectionName)) {
-					$this->generateLog($query);
+					$this->query = $query;
+					$this->generateLog();
 				}
 				return 0;
 			});
