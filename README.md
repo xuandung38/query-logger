@@ -29,8 +29,8 @@ return [
     // Enable or disable query logger
     'enabled' => env('QUERY_LOGGER_ENABLED', true),
 
-    // Enable or disable query logger for specific connection
-    'enable_for_connection' => env('QUERY_LOGGER_ENABLE_FOR_CONNECTION', 'all'),
+    // Enable or disable query logger for specific connection | null for all
+    'enable_for_connection' => env('QUERY_LOGGER_ENABLE_FOR_CONNECTION', null),
 
     // Channel you want to save query into (must have in laravel logging channel config)
     'channel' => env('QUERY_LOGGER_LOG_CHANNEL', 'stack'),
