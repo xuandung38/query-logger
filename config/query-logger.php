@@ -25,5 +25,5 @@ return [
 	'log_execute_path' => env('QUERY_LOGGER_LOG_EXEC_PATH', true),
 
     // Log connetions
-    'log_connections' => array_filter(explode(',', env('QUERY_LOGGER_LOG_CONNECTIONS'))),
+    'log_connections' => array_filter(explode(',', env('QUERY_LOGGER_LOG_CONNECTIONS', ''))),
 ];

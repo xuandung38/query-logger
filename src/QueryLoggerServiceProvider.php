@@ -31,6 +31,6 @@ class QueryLoggerServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../config/query-logger.php', 'query-logger');
 
         // Binding QueryLogger service, make the service can be extensible.
-        $this->app->singleton(QueryLoggerInterface::class, QueryLogger::class);
+        $this->app->bind(QueryLoggerInterface::class, QueryLogger::class);
     }
 }
