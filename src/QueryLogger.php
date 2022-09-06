@@ -1,127 +1,130 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Hxd\QueryLogger;
 
+use Illuminate\Contracts\Config\Repository;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
+use Psr\Log\LoggerInterface;
 
-class QueryLogger
+class QueryLogger implements QueryLoggerInterface
 {
-	private ? object $query;
-	protected string $fullLog;
-	private bool $isEnabled;
-	private string $logChannel;
-	private bool $enableMapValue;
-	private bool $logExecTime;
-	private int $slowQueryThreshold;
-	private bool $logExecPath;
-	private ?string $logConnections;
+    /** @var object|null */
+    private $query = null;
 
-	public function __construct()
-	{
-		$this->isEnabled = config("query-logger.enabled");
-		$this->logChannel = config("query-logger.channel", "stack");
-		$this->enableMapValue = config("query-logger.map_value");
-		$this->logExecTime = config("query-logger.log_exec_time");
-		$this->slowQueryThreshold = config("query-logger.slow_query_threshold");
-		$this->logExecPath = config("query-logger.log_exec_path");
-		$this->logConnections = config("query-logger.log_connections");
-	}
+    /** @var string */
+    private $log = '';
 
-	/**
-	 * @param string $connectionName
-	 *
-	 * @return bool
-	 */
-	public function isEnabledForConnection(string $connectionName): bool
-	{
-		if (is_null($this->logConnections)) {
-			return true;
-		}
+    /** @var array */
+    private $config;
 
-		return in_array(
-			$connectionName,
-			explode(",", $this->logConnections)
-		);
-	}
+    /** @var \Illuminate\Database\Connection */
+    private $db;
 
-	/**
-	 * @param $query
-	 *
-	 * @return void
-	 */
-	public function mapValue()
-	{
-		if ($this->enableMapValue) {
-			$this->fullLog = Str::replaceArray("?", $this->query->bindings, $this->query->sql);
-		}
-	}
+    /** @var \Psr\Log\LoggerInterface */
+    private $logger;
 
-	/**
-	 * @param $query
-	 *
-	 * @return void
-	 */
-	private function addSlowPrefix()
-	{
-		if ($this->slowQueryThreshold > 0 && $this->query->time >= $this->slowQueryThreshold) {
-			$this->fullLog = "#SLOW_QUERY: " . $this->fullLog;
-		}
-	}
+    public function __construct(
+        Repository $config,
+        Connection $db,
+        LoggerInterface $logger
+    ) {
+        $this->config = $config->get('query-logger', []);
+        $this->db = $db;
+        $this->logger = $logger->channel(
+            $this->config['channel']
+        );
+    }
 
-	private function addExecTime()
-	{
-		if ($this->logExecTime) {
-			Log::channel($this->logChannel)->info(
-				"Execute Time: " . $this->query->time . ' ms'
-			);
-		}
-	}
+    /**
+     * @param  string  $name
+     * @return bool
+     */
+    private function isEnabledForConnection($name)
+    {
+        $connections = $this->config['log_connections'];
 
-	private function addExecPath()
-	{
-		if ($this->logExecPath) {
-			Log::channel($this->logChannel)->info(
-				"Execute Path: " . request()->route()->getActionName()
-			);
-		}
-	}
+        if (empty($connections)) {
+            return true;
+        }
 
-	/**
-	 * @param $query
-	 *
-	 * @return void
-	 */
-	private function generateLog(): void
-	{
-		Log::channel($this->logChannel)->info('START QUERY LOG');
+        return in_array($name, $connections, true);
+    }
 
-		self::mapValue();
-		self::addSlowPrefix();
+    private function mappingBindingValues()
+    {
+        if (! $this->config['enable_map_value']) {
+            $this->log = $this->query->sql;
+            return;
+        }
 
-		Log::channel($this->logChannel)->info(sprintf('[connection.%s] %s', $this->query->connectionName, $this->fullLog));
+        $this->log = Str::replaceArray('?', $this->query->bindings, $this->query->sql);
+    }
 
-		self::addExecTime();
-		self::addExecPath();
+    private function addSlowQueryPrefixIfNeeded()
+    {
+        $slowQueryThreshold = $this->config['slow_query_threshold'];
 
-		Log::channel($this->logChannel)->info('END QUERY LOG');
-	}
+        if ($slowQueryThreshold <= 0 || $this->query->time < $slowQueryThreshold) {
+            return;
+        }
 
-	/**
-	 * @return void
-	 */
-	public function init()
-	{
-		if ($this->isEnabled) {
-			DB::listen(function ($query) {
-				if ($this->isEnabledForConnection($query->connectionName)) {
-					$this->query = $query;
-					$this->generateLog();
-				}
-				return 0;
-			});
-		}
-	}
+        $this->log = "# SLOW_QUERY: {$this->log}";
+    }
+
+    private function addExecTime()
+    {
+        if ($this->config['log_execute_time']) {
+            $this->logger->info(
+                "Execute Time: {$this->query->time}ms"
+            );
+        }
+    }
+
+    private function addExecPath()
+    {
+        // FIXME: Move to backtrace, below only run on Http (Console/Job/Queuing is error!)
+        if ($this->config['log_execute_path'] && !app()->runningInConsole()) {
+            $this->logger->info(
+                'Execute Path: ' . request()->route()->getActionName()
+            );
+        }
+    }
+
+    private function logging()
+    {
+        $this->logger->info('---- START QUERY LOG');
+
+        $this->mappingBindingValues();
+
+        $this->addSlowQueryPrefixIfNeeded();
+
+        $this->logger->info(
+            sprintf('[connection.%s] %s', $this->query->connectionName, $this->log)
+        );
+
+        $this->addExecTime();
+
+        $this->addExecPath();
+
+        $this->logger->info('---- END QUERY LOG');
+    }
+
+    public function boot()
+    {
+        if (!$this->config['enabled']) {
+            return;
+        }
+
+        $this->db->listen(function ($query) {
+            if (!$this->isEnabledForConnection($query->connectionName)) {
+                return;
+            }
+
+            $this->query = $query;
+            $this->logging();
+        });
+    }
 }
