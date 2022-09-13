@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hxd\QueryLogger;
 
+use Hxd\QueryLogger\Formater\QueryFormatter;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Str;
@@ -26,16 +27,22 @@ class QueryLogger implements QueryLoggerInterface
     /** @var \Psr\Log\LoggerInterface */
     private $logger;
 
+
+    /** @var \Hxd\QueryLogger\Formater\QueryFormatter */
+    private $queryFormatter;
+
     public function __construct(
         Repository $config,
         Connection $db,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        QueryFormatter $queryFormatter
     ) {
         $this->config = $config->get('query-logger', []);
         $this->db = $db;
         $this->logger = $logger->channel(
             $this->config['channel']
         );
+        $this->queryFormatter = $queryFormatter;
     }
 
     /**
@@ -55,12 +62,17 @@ class QueryLogger implements QueryLoggerInterface
 
     private function mappingBindingValues()
     {
+        $sql =  $this->queryFormatter->formatSql( $this->query->sql);
+
         if (! $this->config['enable_map_value']) {
-            $this->log = $this->query->sql;
+            $this->log = $sql;
             return;
         }
+        
+        $bindings = $this->queryFormatter->cleanupBindings($this->query->bindings);
 
-        $this->log = Str::replaceArray('?', $this->query->bindings, $this->query->sql);
+        $this->log = Str::replaceArray('?', $bindings, $sql);
+        
     }
 
     private function addSlowQueryPrefixIfNeeded()
@@ -124,6 +136,8 @@ class QueryLogger implements QueryLoggerInterface
             }
 
             $this->query = $query;
+
+            
             $this->logging();
         });
     }

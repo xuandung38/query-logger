@@ -2,6 +2,8 @@
 
 namespace Hxd\QueryLogger;
 
+use Hxd\QueryLogger\Formater\QueryFormatter;
+use Hxd\QueryLogger\Formater\QueryFormatterInterface;
 use Illuminate\Support\ServiceProvider;
 
 class QueryLoggerServiceProvider extends ServiceProvider
@@ -31,6 +33,6 @@ class QueryLoggerServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__ . '/../config/query-logger.php', 'query-logger');
 
         // Binding QueryLogger service, make the service can be extensible.
-        $this->app->bind(QueryLoggerInterface::class, QueryLogger::class);
+        $this->app->bind(QueryLoggerInterface::class, QueryLogger::class, QueryFormatterInterface::class, QueryFormatter::class);
     }
 }
